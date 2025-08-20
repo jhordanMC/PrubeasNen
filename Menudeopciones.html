@@ -1,0 +1,363 @@
+<div style="display: flex; align-items: center; gap: 10px;">
+    <div>
+        <label for="estado_pedido" id="estado_label">Elige el CCR4 actual</label>
+        <select name="estado_pedido" id="estado_pedido" onchange="handleSelectionChange()">
+            <option value="" disabled selected>Selecciona una opción</option>
+            <option value="procesando">Estamos procesando tu pedido</option>
+            <option value="preparando">El local está preparando tu pedido / El local está terminando tu pedido</option>
+            <option value="repartidor_retirando">El repartidor llegó a retirar tu pedido</option>
+            <option value="en_camino">Tu pedido está en camino / Tu pedido está llegando</option>
+        </select>
+    </div>
+    <button onclick="resetOptions()" style="border: none; background: transparent; cursor: pointer;">
+        <img src="https://cdn.pixabay.com/photo/2017/01/10/03/54/icon-1968246_1280.png" alt="Recargar" style="width: 24px; height: 24px;">
+    </button>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
+    <label for="hora_entrega">Hora aproximada de entrega (HH:MM):</label>
+    <input type="text" id="hora_entrega" placeholder="Ej. 14:30" style="padding: 5px; width: 100px;">
+</div>
+
+<script>
+let currentCCR4 = '';
+let currentOneView = '';
+let currentIssue = '';
+
+const ccr4Map = {
+    'procesando': 'Procesando',
+    'preparando': 'Preparando',
+    'repartidor_retirando': 'Retirando',
+    'en_camino': 'EnCamino'
+};
+
+const oneViewMap = {
+    'queued_reasignado': 'QueuedReasignado',
+    'queued_reasignado_preparando': 'QueuedReasignado',
+    'rider_acepto_preparando': 'RiderAcepto',
+    'queued_reasignado_retirando': 'QueuedReasignado',
+    'rider_acepto_retirando': 'RiderAcepto',
+    'rider_pickup_retirando': 'RiderPickup',
+    'rider_pickup_dejo': 'RiderPickupDejo',
+    'rider_dropoff': 'RiderDropoff'
+};
+
+const speeches = {
+    // Procesando
+    'Procesando_QueuedReasignado_tiempo_repartidor_ontime': 'Nos encontramos en la etapa de búsqueda de un rider, nos está tomando más tiempo de lo habitual encontrarlo. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Procesando_QueuedReasignado_tiempo_repartidor_delay': 'Nos está costando más tiempo de lo habitual asignarte un rider. Te avisaremos cuando el local comience a preparar tu pedido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    // Preparando
+    'Preparando_QueuedReasignado_tiempo_repartidor_ontime': 'Nos encontramos en la etapa de búsqueda de un rider, nos está tomando más tiempo de lo habitual encontrarlo. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Preparando_QueuedReasignado_tiempo_repartidor_delay': 'Nos encontramos en la etapa de búsqueda de un rider, nos está tomando más tiempo de lo habitual encontrarlo. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_QueuedReasignado_cambio_repartidor_ontime': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya nos encontramos en busca de otro. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Preparando_QueuedReasignado_cambio_repartidor_delay': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya nos encontramos en busca de otro. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Preparando_QueuedReasignado_sin_issue_ontime': 'Estamos en etapa de búsqueda de un rider para tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Preparando_QueuedReasignado_sin_issue_delay': 'Nos encontramos en la etapa de búsqueda de un rider, nos está tomando más tiempo de lo habitual encontrarlo. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_RiderAcepto_tiempo_repartidor_ontime': 'Nos costó conseguir rider pero ya se encuentra en camino al local. Puede que tu orden se demore un poco más del tiempo establecido. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_RiderAcepto_tiempo_repartidor_delay': 'Nos costó conseguir rider, pero ya se encuentra en camino al local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_RiderAcepto_cambio_repartidor_ontime': 'Nos costó conseguir rider pero ya se encuentra en camino al local. Puede que tu orden se demore un poco más del tiempo establecido. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_RiderAcepto_cambio_repartidor_delay': 'Nos costó conseguir rider, pero ya se encuentra en camino al local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_RiderAcepto_sin_issue_ontime': 'El rider se encuentra en camino al local. Verifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_RiderAcepto_sin_issue_delay': 'Nos costó conseguir rider, pero ya se encuentra en camino al local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_RiderAcepto_demorado_recoger_ontime': 'El rider tuvo una demora pero ya se encuentra en camino al local. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Preparando_RiderAcepto_demorado_recoger_delay': 'El rider tuvo una demora pero ya se encuentra en camino al local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    // Retirando
+    'Retirando_QueuedReasignado_tiempo_repartidor_ontime': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. Puede que nos demoremos un poco más del tiempo establecido.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_tiempo_repartidor_delay': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_cambio_repartidor_ontime': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. Puede que nos demoremos un poco más del tiempo establecido.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_cambio_repartidor_delay': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_demorado_recoger_ontime': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. Puede que nos demoremos un poco más del tiempo establecido.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_demorado_recoger_delay': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_local_demorado_ontime': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. Puede que nos demoremos un poco más del tiempo establecido.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_local_demorado_delay': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_sin_issue_ontime': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. Puede que nos demoremos un poco más del tiempo establecido.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_QueuedReasignado_sin_issue_delay': 'El rider asignado a tu pedido llegó al local, pero no pudo continuar con la entrega. Estamos buscando otro rider para asignarlo a tu orden. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_tiempo_repartidor_ontime': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_tiempo_repartidor_delay': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_cambio_repartidor_ontime': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_cambio_repartidor_delay': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_demorado_recoger_ontime': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_demorado_recoger_delay': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_local_demorado_ontime': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_local_demorado_delay': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_sin_issue_ontime': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local. Puede que tu orden se demore un poco más del tiempo establecido. \n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderAcepto_sin_issue_delay': 'El rider asignado a tu pedido no pudo continuar con la entrega, pero ya asignamos a otra persona y se encuentra camino al local.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderPickup_tiempo_repartidor_ontime': 'Nos costó conseguir un rider pero ya se encuentra en el local. Verifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Retirando_RiderPickup_cambio_repartidor_ontime': 'Nos costó conseguir un rider pero ya se encuentra en el local. Verifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Retirando_RiderPickup_demorado_recoger_ontime': 'Nos costó conseguir un rider pero ya se encuentra en el local. Verifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Retirando_RiderPickup_local_demorado_ontime': 'El local se demoró un poco más de lo previsto, pero tu rider ya se encuentra en el local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. ',
+    'Retirando_RiderPickup_sin_issue_ontime': 'El rider ya se encuentra en el local. Verifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Retirando_RiderPickup_tiempo_repartidor_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya se encuentra en el local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Retirando_RiderPickup_cambio_repartidor_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya se encuentra en el local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Retirando_RiderPickup_demorado_recoger_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya se encuentra en el local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Retirando_RiderPickup_local_demorado_delay': 'El local se demoró un poco más de lo previsto, pero tu rider ya se encuentra en el local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX.',
+    'Retirando_RiderPickup_sin_issue_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya se encuentra en el local. \nVerifiqué que la hora aproximada de entrega será a las XX:XX.',
+    // EnCamino
+    'EnCamino_RiderPickupDejo_tiempo_repartidor_ontime': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra en camino a tu dirección.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX.\n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_tiempo_repartidor_delay': 'Nos costó conseguir rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX.\n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_cambio_repartidor_ontime': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra en camino a tu dirección.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX.\n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_cambio_repartidor_delay': 'Nos costó conseguir rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX.\n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_demorado_recoger_ontime': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra en camino a tu dirección.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX.\n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_demorado_recoger_delay': 'Nos costó conseguir rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX.\n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_todos_issue_stacking_esperando_ontime': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido, se encuentra en el local esperando por otro pedido y pronto saldrá a repartirlos.\n\nVerifiqué que la hora aproximada de entrega será a las XX:XX. Recuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_todos_issue_stacking_esperando_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido, se encuentra en el local esperando por otro pedido y pronto saldrá a repartirlos. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_todos_issue_stacking_segunda_ontime': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega se encuentra camino a entregar otra orden, próximo a tu dirección, y luego te llevará tu pedido. \nVerifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_todos_issue_stacking_segunda_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega se encuentra camino a entregar otra orden, próximo a tu dirección, y luego te llevará tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_local_demorado_ontime': 'El local se demoró un poco más de lo previsto, pero tu rider ya se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. Recuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_local_demorado_delay': 'El local se demoró un poco más de lo previsto, pero tu rider ya tiene tu orden y se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_local_demorado_stacking_segunda_ontime': 'El local se demoró un poco más de lo previsto, pero tu rider ya está en camino a entregar otra orden, próximo a tu dirección y luego te llevará tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_local_demorado_stacking_segunda_delay': 'El local se demoró un poco más de lo previsto, pero tu rider ya está en camino a entregar otra orden, próximo a tu dirección y luego te llevará tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_local_demorado_stacking_esperando_ontime': 'El local se demoró un poco más de lo previsto, pero tu rider ya tiene tu pedido, se encuentra en el local esperando por otro pedido, y pronto saldrá a repartirlos. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_local_demorado_stacking_esperando_delay': 'El local se demoró un poco más de lo previsto, pero tu rider ya tiene tu pedido, se encuentra en el local esperando por otro pedido, y pronto saldrá a repartirlos. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_repartidor_poco_demorado_ontime': 'El rider tuvo una demora pero ya se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega',
+    'EnCamino_RiderPickupDejo_repartidor_poco_demorado_delay': 'Tuvimos una demora con tu orden, pero el rider ya se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_repartidor_demorado_stacking_esperando_ontime': 'El rider tuvo una demora pero ya tiene tu pedido, se encuentra en el local esperando por otra orden, y pronto saldrá a repartirlos.\nVerifiqué que la hora aproximada de entrega será a las XX:XX.\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_repartidor_demorado_stacking_esperando_delay': 'Tuvimos una demora con tu orden, pero el rider ya está en camino a entregar otra orden, próximo a tu dirección, y luego te llevará tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_repartidor_demorado_stacking_segunda_ontime': 'El rider tuvo una demora, pero ya está en camino a entregar otra orden, próximo a tu dirección, y luego te llevará tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_repartidor_demorado_stacking_segunda_delay': 'El rider tuvo una demora pero ya está en camino a entregar otra orden, próximo a tu dirección, y luego te llevará tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_sin_issue_ontime': 'El rider ya se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega',
+    'EnCamino_RiderPickupDejo_sin_issue_delay': 'Tuvimos una demora con tu orden, pero el rider ya se encuentra en camino a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_sin_issue_stacking_esperando_ontime': 'El rider ya tiene tu orden, está en el local esperando por otro pedido, y pronto saldrá a repartirlos. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega',
+    'EnCamino_RiderPickupDejo_sin_issue_stacking_esperando_delay': 'El rider ya tiene tu orden, está en el local esperando por otro pedido, y pronto saldrá a repartirlos. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega',
+    'EnCamino_RiderPickupDejo_sin_issue_stacking_segunda_ontime': 'El rider se encuentra en camino a entregar otra orden, próximo a tu dirección y luego te llevará tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderPickupDejo_sin_issue_stacking_segunda_delay': 'Tuvimos una demora con tu orden pero tu rider ya está en camino a entregar otra orden, próximo a tu dirección, y luego te llevará tu pedido. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderDropoff_tiempo_repartidor_ontime': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra llegando a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega',
+    'EnCamino_RiderDropoff_tiempo_repartidor_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra cerca de tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderDropoff_cambio_repartidor_ontime': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra llegando a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega',
+    'EnCamino_RiderDropoff_cambio_repartidor_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra cerca de tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderDropoff_demorado_recoger_ontime': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra llegando a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega',
+    'EnCamino_RiderDropoff_demorado_recoger_delay': 'Nos costó conseguir un rider, pero la persona encargada de tu entrega ya tiene tu pedido y se encuentra cerca de tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderDropoff_local_demorado_ontime': 'El local se demoró un poco más de lo previsto, pero tu rider ya se encuentra llegando a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega',
+    'EnCamino_RiderDropoff_local_demorado_delay': 'El local se demoró un poco más de lo previsto, pero tu rider ya tiene tu orden y se encuentra cerca de tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderDropoff_repartidor_poco_demorado_ontime': 'El rider tuvo una demora pero ya se encuentra llegando a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderDropoff_repartidor_poco_demorado_delay': 'Tuvimos una demora con tu orden, pero el rider ya se encuentra cerca de tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderDropoff_sin_issue_ontime': 'El rider ya se encuentra llegando a tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.',
+    'EnCamino_RiderDropoff_sin_issue_delay': 'Tuvimos una demora con tu orden, pero el rider ya se encuentra cerca de tu dirección. Verifiqué que la hora aproximada de entrega será a las XX:XX. \n\nRecuerda que puedes escribirle por el chat de la app y brindarle alguna referencia para llegar al lugar de entrega.'
+};
+
+const parents = [
+    'procesando', 'preparando', 'repartidor_retirando', 'en_camino',
+    'queued_reasignado', 'queued_reasignado_preparando', 'rider_acepto_preparando',
+    'queued_reasignado_retirando', 'rider_acepto_retirando', 'rider_pickup_retirando',
+    'rider_pickup_dejo', 'rider_dropoff'
+];
+
+function getIssueKey(issue) {
+    const issueMap = {
+        'tiempo_repartidor': 'tiempo_repartidor',
+        'cambio_repartidor': 'cambio_repartidor',
+        'sin_issue': 'sin_issue',
+        'demorado_recoger': 'demorado_recoger',
+        'local_demorado': 'local_demorado',
+        'repartidor_poco_demorado': 'repartidor_poco_demorado',
+        'todos_issue_stacking_esperando': 'todos_issue_stacking_esperando',
+        'todos_issue_stacking_segunda': 'todos_issue_stacking_segunda',
+        'local_demorado_stacking_segunda': 'local_demorado_stacking_segunda',
+        'local_demorado_stacking_esperando': 'local_demorado_stacking_esperando',
+        'repartidor_demorado_stacking_esperando': 'repartidor_demorado_stacking_esperando',
+        'repartidor_demorado_stacking_segunda': 'repartidor_demorado_stacking_segunda',
+        'sin_issue_stacking_esperando': 'sin_issue_stacking_esperando',
+        'sin_issue_stacking_segunda': 'sin_issue_stacking_segunda'
+    };
+    return issueMap[issue] || issue;
+}
+
+function handleSelectionChange() {
+    const select = document.getElementById('estado_pedido');
+    const label = document.getElementById('estado_label');
+    const horaEntregaInput = document.getElementById('hora_entrega');
+    const selectedValue = select.value;
+    console.log('Valor seleccionado:', selectedValue);
+
+    if (selectedValue === '') return; // No hacer nada si es la opción por defecto
+
+    if (parents.includes(selectedValue)) {
+        // Guardar el estado actual
+        if (['procesando', 'preparando', 'repartidor_retirando', 'en_camino'].includes(selectedValue)) {
+            currentCCR4 = selectedValue;
+            currentOneView = '';
+            currentIssue = '';
+        } else {
+            currentOneView = selectedValue;
+        }
+
+        select.innerHTML = '';
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.text = 'Selecciona una opción';
+        defaultOption.disabled = true;
+        defaultOption.selected = true;
+        select.appendChild(defaultOption);
+        label.textContent = 'Elige el estado de one view actual';
+
+        function createOption(value, text) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.text = text;
+            select.appendChild(option);
+        }
+
+        switch (selectedValue) {
+            case 'procesando':
+                createOption('queued_reasignado', '1.1. Queued Reasignado');
+                break;
+            case 'queued_reasignado':
+                createOption('tiempo_repartidor', '1.1.1. Nos está llevando más tiempo del habitual conseguir repartidor');
+                break;
+            case 'preparando':
+                createOption('queued_reasignado_preparando', '1.1. Queued Reasignado');
+                createOption('rider_acepto_preparando', '1.2. Rider aceptó el pedido (Courier accepted)');
+                break;
+            case 'queued_reasignado_preparando':
+                createOption('tiempo_repartidor', '1.1.1. Nos está llevando más tiempo del habitual conseguir repartidor');
+                createOption('cambio_repartidor', '1.1.2. Tuvimos un cambio de repartidor');
+                createOption('sin_issue', '1.1.3. Sin issue');
+                break;
+            case 'rider_acepto_preparando':
+                createOption('tiempo_repartidor', '1.2.1. Nos está llevando más tiempo del habitual conseguir repartidor');
+                createOption('cambio_repartidor', '1.2.2. Tuvimos un cambio de repartidor');
+                createOption('sin_issue', '1.2.3. Sin issue');
+                createOption('demorado_recoger', '1.2.4. El repartidor se encuentra demorado para recoger el pedido');
+                break;
+            case 'repartidor_retirando':
+                createOption('queued_reasignado_retirando', '1.1. Queued Reasignado');
+                createOption('rider_acepto_retirando', '1.2. Rider aceptó el pedido (Courier accepted)');
+                createOption('rider_pickup_retirando', '1.3. Rider en el Pick Up');
+                break;
+            case 'queued_reasignado_retirando':
+                createOption('tiempo_repartidor', '1.1.1. Nos está llevando más tiempo del habitual conseguir repartidor');
+                createOption('cambio_repartidor', '1.1.2. Tuvimos un cambio de repartidor');
+                createOption('demorado_recoger', '1.1.3. El repartidor se encuentra demorado para recoger el pedido');
+                createOption('local_demorado', '1.1.4. El local está demorado');
+                createOption('sin_issue', '1.1.5. Sin issue');
+                break;
+            case 'rider_acepto_retirando':
+                createOption('tiempo_repartidor', '1.2.1. Nos está llevando más tiempo del habitual conseguir repartidor');
+                createOption('cambio_repartidor', '1.2.2. Tuvimos un cambio de repartidor');
+                createOption('demorado_recoger', '1.2.3. El repartidor se encuentra demorado para recoger el pedido');
+                createOption('local_demorado', '1.2.4. El local está demorado');
+                createOption('sin_issue', '1.2.5. Sin issue');
+                break;
+            case 'rider_pickup_retirando':
+                createOption('tiempo_repartidor', '1.3.1. Nos está llevando más tiempo del habitual conseguir repartidor');
+                createOption('cambio_repartidor', '1.3.2. Tuvimos un cambio de repartidor');
+                createOption('demorado_recoger', '1.3.3. El repartidor se encuentra demorado para recoger el pedido');
+                createOption('local_demorado', '1.3.4. El local está demorado');
+                createOption('sin_issue', '1.3.5. Sin issue');
+                break;
+            case 'en_camino':
+                createOption('rider_pickup_dejo', '1.1. Rider en el pick up / Rider dejó el pick up');
+                createOption('rider_dropoff', '1.2. Rider cerca del dropoff');
+                break;
+            case 'rider_pickup_dejo':
+                createOption('tiempo_repartidor', '1.1.1. Nos está llevando más tiempo del habitual conseguir repartidor');
+                createOption('cambio_repartidor', '1.1.2. Tuvimos un cambio de repartidor');
+                createOption('demorado_recoger', '1.1.3. El repartidor se encuentra demorado para recoger el pedido');
+                createOption('todos_issue_stacking_esperando', '1.1.4. Todos los issues anteriores + Con Stacking esperando otra orden');
+                createOption('todos_issue_stacking_segunda', '1.1.5. Todos los issues + Stacking segunda/tercera entrega');
+                createOption('local_demorado', '1.1.6. El local está demorado');
+                createOption('local_demorado_stacking_segunda', '1.1.7. Local está demorado + Stacking segunda/tercera entrega');
+                createOption('local_demorado_stacking_esperando', '1.1.8. Local está demorado + Con Stacking esperando otra orden');
+                createOption('repartidor_poco_demorado', '1.1.9. El repartidor está un poco demorado');
+                createOption('repartidor_demorado_stacking_esperando', '1.1.10. Repartidor un poco demorado + Con Stacking esperando otra orden');
+                createOption('repartidor_demorado_stacking_segunda', '1.1.11. Repartidor un poco demorado + Stacking segunda/tercera entrega');
+                createOption('sin_issue', '1.1.12. Sin issue');
+                createOption('sin_issue_stacking_esperando', '1.1.13. Sin issue + Con Stacking esperando otra orden');
+                createOption('sin_issue_stacking_segunda', '1.1.14. Sin issue + Con Stacking segunda/tercera entrega');
+                break;
+            case 'rider_dropoff':
+                createOption('tiempo_repartidor', '1.2.1. Nos está llevando más tiempo del habitual conseguir repartidor');
+                createOption('cambio_repartidor', '1.2.2. Tuvimos un cambio de repartidor');
+                createOption('demorado_recoger', '1.2.3. El repartidor se encuentra demorado para recoger el pedido');
+                createOption('local_demorado', '1.2.4. El local está demorado');
+                createOption('repartidor_poco_demorado', '1.2.5. El repartidor está un poco demorado');
+                createOption('sin_issue', '1.2.6. Sin issue');
+                break;
+        }
+    } else {
+        if (selectedValue === 'ontime' || selectedValue === 'delay') {
+            const ccr4Str = ccr4Map[currentCCR4];
+            const oneViewStr = oneViewMap[currentOneView] || '';
+            const issueKey = getIssueKey(currentIssue);
+            const key = `${ccr4Str}_${oneViewStr}_${issueKey}_${selectedValue}`;
+            let speech = speeches[key];
+            const horaEntrega = horaEntregaInput.value.trim();
+
+            console.log('Generated key:', key); // Depuración
+            console.log('Speech found:', speech); // Depuración
+            console.log('Hora ingresada:', horaEntrega); // Depuración
+
+            if (speech) {
+                // Validar el formato de la hora (HH:MM)
+                const horaRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+                const horaValida = horaEntrega && horaRegex.test(horaEntrega);
+                // Reemplazar XX:XX con la hora ingresada o mantener XX:XX si no es válida
+                const horaFinal = horaValida ? horaEntrega : 'XX:XX';
+                speech = speech.replace('XX:XX', horaFinal);
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(speech).then(() => {
+                        alert('¡Speech copiado al portapapeles!\n' + speech + (horaValida ? '' : '\n\nNota: Ingresa una hora válida (HH:MM) para reemplazar XX:XX.'));
+                    }).catch(err => {
+                        console.error('Error al copiar al portapapeles:', err);
+                        alert('No se pudo copiar al portapapeles. Copia manualmente:\n' + speech + (horaValida ? '' : '\n\nNota: Ingresa una hora válida (HH:MM) para reemplazar XX:XX.'));
+                    });
+                } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = speech;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    try {
+                        document.execCommand('copy');
+                        alert('¡Speech copiado al portapapeles!\n' + speech + (horaValida ? '' : '\n\nNota: Ingresa una hora válida (HH:MM) para reemplazar XX:XX.'));
+                    } catch (err) {
+                        console.error('Error al copiar con execCommand:', err);
+                        alert('No se pudo copiar al portapapeles. Copia manualmente:\n' + speech + (horaValida ? '' : '\n\nNota: Ingresa una hora válida (HH:MM) para reemplazar XX:XX.'));
+                    }
+                    document.body.removeChild(textarea);
+                }
+            } else {
+                alert('No se encontró un speech para la combinación seleccionada. Clave: ' + key);
+                console.error('Clave no encontrada:', key);
+            }
+        } else {
+            currentIssue = selectedValue;
+            select.innerHTML = '';
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.text = 'Selecciona una opción';
+            defaultOption.disabled = true;
+            defaultOption.selected = true;
+            select.appendChild(defaultOption);
+            label.textContent = 'Elige el CCR3';
+
+            function createOption(value, text) {
+                const option = document.createElement('option');
+                option.value = value;
+                option.text = text;
+                select.appendChild(option);
+            }
+
+            createOption('ontime', 'CCR3: PEDIDO DENTRO DEL TIEMPO DE ENTREGA');
+            createOption('delay', 'CCR3: QUEJA SOBRE RETRASO EXTREMO DEL PEDIDO');
+        }
+    }
+}
+
+function resetOptions() {
+    const select = document.getElementById('estado_pedido');
+    const label = document.getElementById('estado_label');
+    const horaEntregaInput = document.getElementById('hora_entrega');
+    label.textContent = 'Elige el CCR4 actual';
+    select.innerHTML = `
+        <option value="" disabled selected>Selecciona una opción</option>
+        <option value="procesando">Estamos procesando tu pedido</option>
+        <option value="preparando">El local está preparando tu pedido / El local está terminando tu pedido</option>
+        <option value="repartidor_retirando">El repartidor llegó a retirar tu pedido</option>
+        <option value="en_camino">Tu pedido está en camino / Tu pedido está llegando</option>
+    `;
+    currentCCR4 = '';
+    currentOneView = '';
+    currentIssue = '';
+    horaEntregaInput.value = ''; // Resetear el campo de hora
+}
+</script>
